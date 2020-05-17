@@ -1,7 +1,9 @@
-#include "iostream"
 #include "SDL.h"
-#include <stdlib.h>
 #include <ctime>
+#include <thread>
+#include <mutex>
+
+using namespace std;
 
 #define WIN_X 1024
 #define WIN_Y 512
@@ -25,29 +27,37 @@ typedef struct _snake {
 	snakeNode* head;
 }snake;
 
-bool init(SDL_Window**, SDL_Renderer**, cell[MAP_X][MAP_Y], snake*);
-bool update(cell[MAP_X][MAP_Y], snake*);
-void renderWorld(cell[MAP_X][MAP_Y], SDL_Renderer**);
-void getNewFoodPos(cell[MAP_X][MAP_Y]);
+//functions
+bool init(SDL_Window**, SDL_Renderer**);
+bool update();
+void renderWorld(SDL_Renderer**);
+void getNewFoodPos();
+void handleInput(SDL_Renderer**);
+
+//global vars
+snake* gSnake;
+bool running;
+cell map[MAP_X][MAP_Y];
+mutex mtx;
 
 int main(int argc, char* argv[]) {
 	SDL_Window* window;
 	SDL_Renderer* renderer;
-	SDL_Event event;
-	cell map[MAP_X][MAP_Y];
-	bool running = true;
-	snake* gSnake = (snake*)malloc(sizeof(gSnake));
-	gSnake->d = snake::right;
 	//init SDL stuff and game world
-	if (!init(&window, &renderer, map, gSnake)) {
+	if (!init(&window, &renderer)) {
 		printf("Error initializing\n");
 		return -1;
 	}
+	SDL_Event event;
+
+	//start new thread to handle updates and renderering
+	thread gameThread(handleInput, &renderer);
 	while (running) {
-		//handle events
+		//handle input events
 		while (SDL_PollEvent(&event)) {
 			switch (event.type) {
 			case SDL_KEYDOWN:
+				mtx.lock();
 				switch (event.key.keysym.sym) {
 				case SDLK_LEFT:
 					if (gSnake->d != snake::right)gSnake->d = snake::left;
@@ -64,23 +74,37 @@ int main(int argc, char* argv[]) {
 				default:
 					break;
 				}
+				mtx.unlock();
 			}
 		}
 
-		//perform game logic and update snake body positions 
-		if (running = update(map, gSnake)) {
-			//render map
-			renderWorld(map, &renderer);
-		}
-		SDL_Delay(100); 
 	}
-
+	gameThread.join();
+	snakeNode* ptr = gSnake->head;
+	snakeNode* prev = NULL;
+	//clean up
+	while (ptr != NULL) {
+		prev = ptr;
+		ptr = ptr->next;
+		free(prev);
+	}
 	SDL_DestroyWindow(window);
 	SDL_Quit();
 	return 0;
 }
 
-void clearSnakeFromMap(cell map[MAP_X][MAP_Y], snake* gSnake) {
+void handleInput(SDL_Renderer** renderer) {
+	while (running) {
+		//perform game logic and update snake body positions 
+		if (running = update()) {
+			//render map
+			renderWorld(renderer);
+		}
+		SDL_Delay(100);
+	}
+}
+
+void clearSnakeFromMap() {
 	snakeNode* ptr = gSnake->head;
 	while (ptr != NULL) {
 		map[ptr->x][ptr->y] = blank;
@@ -88,7 +112,7 @@ void clearSnakeFromMap(cell map[MAP_X][MAP_Y], snake* gSnake) {
 	}
 }
 
-void putSnakeOnMap(cell map[MAP_X][MAP_Y], snake* gSnake) {
+void putSnakeOnMap() {
 	snakeNode* ptr = gSnake->head;
 	while (ptr != NULL) {
 		map[ptr->x][ptr->y] = body;
@@ -96,8 +120,7 @@ void putSnakeOnMap(cell map[MAP_X][MAP_Y], snake* gSnake) {
 	}
 }
 
-
-bool update(cell map[MAP_X][MAP_Y], snake* gSnake) {
+bool update() {
 	int newHeadPos[2] = { gSnake->head->x,gSnake->head->y };
 	switch (gSnake->d) {
 	case snake::up:
@@ -122,9 +145,9 @@ bool update(cell map[MAP_X][MAP_Y], snake* gSnake) {
 	if (map[newHeadPos[0]][newHeadPos[1]] == body) {
 		return false;
 	}
-	clearSnakeFromMap(map, gSnake);
+	clearSnakeFromMap();
 	if (map[newHeadPos[0]][newHeadPos[1]] == food) {
-		getNewFoodPos(map);
+		getNewFoodPos();
 		//add node to end of llist
 		snakeNode* ptr = gSnake->head;
 		while (ptr->next != NULL) {
@@ -136,7 +159,7 @@ bool update(cell map[MAP_X][MAP_Y], snake* gSnake) {
 
 	//update body pos
 	snakeNode* ptr = gSnake->head->next;
-	int x=gSnake->head->x;
+	int x = gSnake->head->x;
 	int y = gSnake->head->y;
 	int xTemp, yTemp;
 	//iterate through list and move each node to its parent node's pos
@@ -152,11 +175,11 @@ bool update(cell map[MAP_X][MAP_Y], snake* gSnake) {
 
 	gSnake->head->x = newHeadPos[0];
 	gSnake->head->y = newHeadPos[1];
-	putSnakeOnMap(map, gSnake);
+	putSnakeOnMap();
 	return true;
 }
 
-void renderWorld(cell map[MAP_X][MAP_Y], SDL_Renderer** renderer) {
+void renderWorld(SDL_Renderer** renderer) {
 	SDL_SetRenderDrawColor(*renderer, 0, 0, 0, 0);
 	SDL_RenderClear(*renderer);
 	int x, y;
@@ -183,7 +206,7 @@ void renderWorld(cell map[MAP_X][MAP_Y], SDL_Renderer** renderer) {
 	SDL_RenderPresent(*renderer);
 }
 
-void getNewFoodPos(cell map[MAP_X][MAP_Y]) {
+void getNewFoodPos() {
 
 	int pos[2] = { rand() % MAP_X ,rand() % MAP_Y };
 
@@ -194,7 +217,7 @@ void getNewFoodPos(cell map[MAP_X][MAP_Y]) {
 	map[pos[0]][pos[1]] = food;
 }
 
-bool init(SDL_Window** window, SDL_Renderer** renderer, cell map[MAP_X][MAP_Y], snake* gSnake) {
+bool init(SDL_Window** window, SDL_Renderer** renderer) {
 	SDL_Init(SDL_INIT_VIDEO);
 	*window = SDL_CreateWindow
 	("SDL Snake",
@@ -213,32 +236,28 @@ bool init(SDL_Window** window, SDL_Renderer** renderer, cell map[MAP_X][MAP_Y], 
 			map[x][y] = blank;
 		}
 	}
-	//create snake head
-	
+	//init game state
+	running = true;
+	gSnake = (snake*)malloc(sizeof(gSnake));
+	gSnake->d = snake::right;
+
 	//god damn this is ugly
 	snakeNode* head = (snakeNode*)malloc(sizeof(snakeNode));
 	snakeNode* second = (snakeNode*)malloc(sizeof(snakeNode));
 	snakeNode* third = (snakeNode*)malloc(sizeof(snakeNode));
-	snakeNode* fourth = (snakeNode*)malloc(sizeof(snakeNode));
-	snakeNode* fifth = (snakeNode*)malloc(sizeof(snakeNode));
-	snakeNode* sixth = (snakeNode*)malloc(sizeof(snakeNode));
-
-	head->next = second; 
+	head->next = second;
 	second->next = third;
-	third->next = fourth;
-	fourth->next = fifth;
-	fifth->next = sixth;
-	sixth->next = NULL;
+	third->next = NULL;
 
 	snakeNode* ptr = head;
 	//assign all nodes center starting position
 	while (ptr != NULL) {
 		ptr->x = MAP_X / 2;
 		ptr->y = MAP_Y / 2;
-		ptr = ptr -> next;
+		ptr = ptr->next;
 	}
 	gSnake->head = head;
 	srand(time(NULL));
-	getNewFoodPos(map);
+	getNewFoodPos();
 	return true;
 }
