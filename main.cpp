@@ -32,7 +32,7 @@ bool init(SDL_Window**, SDL_Renderer**);
 bool update();
 void renderWorld(SDL_Renderer**);
 void getNewFoodPos();
-void handleInput(SDL_Renderer**);
+void renderLoop(SDL_Renderer**);
 
 //global vars
 snake* gSnake;
@@ -48,10 +48,11 @@ int main(int argc, char* argv[]) {
 		printf("Error initializing\n");
 		return -1;
 	}
-	SDL_Event event;
+	//start new thread to handle game logic, updates, renderering
+	thread renderThread(renderLoop, &renderer);
 
-	//start new thread to handle updates and renderering
-	thread gameThread(handleInput, &renderer);
+	//input handling loop
+	SDL_Event event;
 	while (running) {
 		//handle input events
 		while (SDL_PollEvent(&event)) {
@@ -77,9 +78,8 @@ int main(int argc, char* argv[]) {
 				mtx.unlock();
 			}
 		}
-
 	}
-	gameThread.join();
+	renderThread.join();
 	snakeNode* ptr = gSnake->head;
 	snakeNode* prev = NULL;
 	//clean up
@@ -93,7 +93,8 @@ int main(int argc, char* argv[]) {
 	return 0;
 }
 
-void handleInput(SDL_Renderer** renderer) {
+//perform game logic and render if game still running
+void renderLoop(SDL_Renderer** renderer) {
 	while (running) {
 		//perform game logic and update snake body positions 
 		if (running = update()) {
