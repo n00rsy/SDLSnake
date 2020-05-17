@@ -3,7 +3,7 @@ personal project to learn c++.
 
 ![](snake.png)
 
-Used a linked list to represent snake in memory and 2D array for the play field. Sperate created seperate thread for renderering so user input isn't bound to fps.
+Used a linked list to represent snake in memory and 2D array for the play field. Utilizes seperate thread for renderering so user input isn't bound to fps.
 
 # Usage
 ## Windows
